@@ -3,7 +3,7 @@ use tera::{Tera,Context};
 use std::path::{Path,PathBuf};
 use std::fs;
 use comrak::{markdown_to_html,ComrakOptions};
-
+// todo: use 'content', etc
 const default_page_tpl:&str = "<!DOCTYPE html>
 <html>
     <head></head>
@@ -12,10 +12,10 @@ const default_page_tpl:&str = "<!DOCTYPE html>
 const default_index_tpl:&str = "<!DOCTYPE html>
 <html>
     <head></head>
-    <body>
+    <body><ul>
         {% for item in dir_list %}
-        {{item.name}}.
-        {% endfor %}
+        <li><a href='{{item.path}}'>{{item.name}}</a></li>
+        {% endfor %}</ul>
     </body>
 </html>";
 // --baseUrl --template --index
@@ -33,7 +33,8 @@ struct Opt{
 }
 #[derive(Debug, serde::Serialize)]
 struct Item{
-    name: String
+    name: String,
+    path: String, // relative path
 }
 fn main() {
     // println!("Hello, world!");
@@ -108,7 +109,20 @@ fn render(tera:&Tera,src:&PathBuf,dst:&PathBuf)->std::io::Result<()>{
     let mut post_list = Vec::new();
     for entry in fs::read_dir(src.parent().unwrap()).unwrap(){
         let path=entry?.path();
-        let file_name=path.file_name().unwrap().to_str().unwrap().to_string();
+        // let file_name=path.file_name().unwrap().to_str().unwrap().to_string();
+        let file_name=path.file_stem().unwrap().to_os_string().into_string().unwrap();
+        let file_path:String;
+        if path.is_dir(){
+            file_path = file_name.clone();
+        }
+        else if "md" == path.extension().unwrap(){
+            let mut tmp = file_name.clone();
+            tmp.push_str(".html");
+            file_path = tmp;
+        }
+        else{
+            continue;
+        }
     /*
         let pos=file_name.rfind('.').unwrap();
         let (file_name,_)=file_name.split_at(pos);
@@ -124,7 +138,7 @@ fn render(tera:&Tera,src:&PathBuf,dst:&PathBuf)->std::io::Result<()>{
         url.push_str(".html");
     */
         // todo: add time, size, etc..
-        post_list.push(Item{name:file_name});
+        post_list.push(Item{name:file_name,path:file_path});
     };
 
     // post_list.sort_by_key(|k| k.time);
