@@ -4,12 +4,12 @@ use std::path::{Path,PathBuf};
 use std::fs;
 use comrak::{markdown_to_html,ComrakOptions};
 // todo: use 'content', etc
-const default_page_tpl:&str = "<!DOCTYPE html>
+const DEFAULT_PAGE_TPL:&str = "<!DOCTYPE html>
 <html>
     <head></head>
     <body>{{post_content}}</body>
 </html>";
-const default_index_tpl:&str = "<!DOCTYPE html>
+const DEFAULT_INDEX_TPL:&str = "<!DOCTYPE html>
 <html>
     <head></head>
     <body><ul>
@@ -18,7 +18,7 @@ const default_index_tpl:&str = "<!DOCTYPE html>
         {% endfor %}</ul>
     </body>
 </html>";
-// --baseUrl --template --index
+// --baseUrl --template --index --theme
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
 struct Opt{
@@ -26,10 +26,12 @@ struct Opt{
     clear: bool,
     #[structopt(short,long)]
     base_url: Option<String>,
-    #[structopt(short,long)]
+    #[structopt(long)]
     template: Option<String>,
     #[structopt(short,long)]
-    index: Option<String>
+    index: Option<String>,
+    #[structopt(long)]
+    theme: Option<String>,
 }
 #[derive(Debug, serde::Serialize)]
 struct Item{
@@ -43,8 +45,17 @@ fn main() {
 }
 // render
 fn build(opt: &Opt) {
+    // check theme validate            why &opt.theme
+    let mut tpl_dir = if let Some(theme) = &opt.theme{
+        let mut tpl_dir = String::from("themes/");
+        tpl_dir.push_str(&theme);
+        tpl_dir
+    } else {
+        String::from("templates")
+    };
+    tpl_dir.push_str("/*.html");
     // init tera
-    let mut tera = match Tera::new("templates/*.html") {
+    let mut tera = match Tera::new(&tpl_dir) {
         Ok(t) => t,
         Err(e) => {
             println!("Parsing error(s): {}", e);
@@ -55,11 +66,11 @@ fn build(opt: &Opt) {
     tera.autoescape_on(vec![]);
     let names: Vec<_> = tera.get_template_names().collect();
     if !names.contains(&"default-page.html"){
-        tera.add_raw_template("default-page.html", default_page_tpl).unwrap();
+        tera.add_raw_template("default-page.html", DEFAULT_PAGE_TPL).unwrap();
     }
     let names: Vec<_> = tera.get_template_names().collect(); // ugly
     if !names.contains(&"default-index.html"){
-        tera.add_raw_template("default-index.html", default_index_tpl).unwrap();
+        tera.add_raw_template("default-index.html", DEFAULT_INDEX_TPL).unwrap();
     }
     // check clear
     let path = Path::new("public");
@@ -75,10 +86,10 @@ fn build(opt: &Opt) {
         fs::create_dir(&path).unwrap();
     }
     // render md only
-    render_dir(&tera, Path::new("content"), Path::new("public"));
+    render_dir(&tera, Path::new("content"), Path::new("public"), &opt);
 }
 // recurisive render a dir
-fn render_dir(tera:&Tera,src_dir:&Path,dst_dir:&Path){
+fn render_dir(tera:&Tera,src_dir:&Path,dst_dir:&Path, opt: &Opt){
     for entry in fs::read_dir(src_dir).unwrap(){
         let entry=entry.unwrap();
         let path=entry.path();
@@ -90,17 +101,18 @@ fn render_dir(tera:&Tera,src_dir:&Path,dst_dir:&Path){
         //let mut dst=PathBuf::from("public");
         //dst.push(path.file_name().unwrap());
         if path.is_dir(){
-            render_dir(tera, &path, &dst_dir)
+            render_dir(tera, &path, &dst_dir, &opt)
         }
         else if path.extension().unwrap() == "md"{
             dst_dir.set_extension("html");
             // render and write. opt
-            render(&tera,&path,&dst_dir).unwrap();
+            render(&tera,&path,&dst_dir,&opt).unwrap();
         }
     }
 }
 // render a single file
-fn render(tera:&Tera,src:&PathBuf,dst:&PathBuf)->std::io::Result<()>{
+// todo: src and dst's type
+fn render(tera:&Tera,src:&PathBuf,dst:&PathBuf, opt:&Opt)->std::io::Result<()>{
     let src_content=fs::read_to_string(src)?;
     let post_context=markdown_to_html(&src_content, &ComrakOptions::default());
 
@@ -143,20 +155,29 @@ fn render(tera:&Tera,src:&PathBuf,dst:&PathBuf)->std::io::Result<()>{
 
     // post_list.sort_by_key(|k| k.time);
     context.insert("dir_list", &post_list);
-    
 
     context.insert("post_content", &post_context);
-    let template_type:&str;
-    // if not front-matter !
-    println!("{}",dst.file_name().unwrap().to_str().unwrap());
-    if src.file_name().unwrap().to_str().unwrap() == "index.md"{
-        template_type="default-index.html";
-    }
-    else{
-        template_type="default-page.html";
-    }
-    let content=tera.render(template_type, &context).unwrap();
+    let template_type= choose_template(&src, &opt);
+    let content=tera.render(&template_type, &context).unwrap();
     // if parent dir doesn't exist?
     fs::write(dst, content).unwrap();
     Ok(())
+}
+
+fn choose_template(src: &Path, opt: &Opt) -> String{
+    let mut tpl1=String::from("default-index.html");
+    let mut tpl2=String::from("default-page.html");
+    if let Some(tpl) = &opt.index {
+        tpl1 = tpl.clone();
+    }
+    if let Some(tpl) = &opt.template {
+        tpl2 = tpl.clone();
+    }
+    if src.file_name().unwrap().to_str().unwrap() == "index.md"{
+        tpl1
+    }
+    else{
+        tpl2
+    }
+
 }
