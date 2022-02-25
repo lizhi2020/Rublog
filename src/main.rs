@@ -74,7 +74,7 @@ fn init_tera(dir: &str)->tera::Tera{
     if !names.contains(&DEFAULT_PAGE_TPL_NAME){
         tera.add_raw_template(DEFAULT_PAGE_TPL_NAME, DEFAULT_PAGE_TPL).unwrap();
     }
-    let names: Vec<_> = tera.get_template_names().collect(); // ugly
+    let names: Vec<_> = tera.get_template_names().collect(); // ugly. todo opt
     if !names.contains(&DEFAULT_INDEX_TPL_NAME){
         tera.add_raw_template(DEFAULT_INDEX_TPL_NAME, DEFAULT_INDEX_TPL).unwrap();
     };
@@ -130,7 +130,6 @@ fn build(opt: &Opt) {
 }
 // recurisive render a dir
 fn render_dir(tera:&Tera,src_dir:&Path,dst_dir:&Path, opt: &Opt){
-
     let mut index = false;
     let mut posts = Vec::new();
     for entry in fs::read_dir(src_dir).unwrap(){
@@ -151,7 +150,6 @@ fn render_dir(tera:&Tera,src_dir:&Path,dst_dir:&Path, opt: &Opt){
         }
         else if path.extension().unwrap() == "md"{
             dst_dir.set_extension("html");
-            // render and write. opt
             let post = meta_from_file(&path).unwrap();
             let template = choose_template(&path, &opt, &post);
             render(&tera, &dst_dir, &template, &Context::from_serialize(&post).unwrap()).unwrap();
@@ -197,10 +195,9 @@ fn meta_from_file(src:&Path) -> io::Result<Box<Post>>{
     let template = front_matter.template;
     Ok(Box::new(Post{title,content,url,template}))
 }
-
+// dst's parent dir should exist
 fn render(tera:&Tera,dst:&Path,template: &String,ctx: &tera::Context) -> std::io::Result<()>{
-    let content = tera.render(template, ctx).unwrap(); // &ctx ?
-    // if parent dir doesn't exist?
+    let content = tera.render(template, ctx).unwrap();
     fs::write(dst, &content)?;
     Ok(())
 }
