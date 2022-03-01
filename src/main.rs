@@ -38,6 +38,8 @@ struct Opt{
     index: Option<String>,
     #[structopt(long)]
     theme: Option<String>,
+    #[structopt(short,long)]
+    verbose: bool,
 }
 #[derive(Debug, serde::Serialize)]
 struct Item{
@@ -173,7 +175,7 @@ fn render_dir(tera:&Tera,src_dir:&Path,dst_dir:&Path, opt: &Opt){
 fn extract_post(raw: &str) -> (&str, &str){
     lazy_static! {
         static ref RE: Regex = Regex::new(r"(?xms)
-            \A\+\+\+(\r\n|\n)(?P<front>.*?)^\+\+\+(\r\n|\n)
+            \A\+\+\+(\r\n|\n)(?P<front>.*?)^\+\+\+(\r\n|\n)?
             (?P<content>.*)$
             ").unwrap();
     }
@@ -256,5 +258,12 @@ mod test{
         let (p1,p2) = super::extract_post(s);
         assert_eq!(p1,"");
         assert_eq!(p2,s);
+    }
+    #[test]
+    fn extract_post_6() {
+        let s= "+++\r\nabc\r\n+++";
+        let (p1,p2) = super::extract_post(s);
+        assert_eq!(p1,"abc\r\n");
+        assert_eq!(p2,"");
     }
 }
