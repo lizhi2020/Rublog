@@ -4,6 +4,9 @@ use std::path::{Path,PathBuf};
 use std::fs;
 use std::io;
 use comrak::{markdown_to_html,ComrakOptions};
+use lazy_static::lazy_static;
+use regex::Regex;
+
 // todo: use 'content', etc
 const DEFAULT_PAGE_TPL_NAME:&str = "default-page.html";
 const DEFAULT_INDEX_TPL_NAME:&str = "default-index.html";
@@ -167,28 +170,25 @@ fn render_dir(tera:&Tera,src_dir:&Path,dst_dir:&Path, opt: &Opt){
         render(&tera, &to, &template, &ctx).unwrap();
     }
 }
+fn extract_post(raw: &str) -> (&str, &str){
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r"(?xms)
+            \A\+\+\+(\r\n|\n)(?P<front>.*?)^\+\+\+(\r\n|\n)
+            (?P<content>.*)$
+            ").unwrap();
+    }
+    if let Some(cap) = RE.captures(raw){
+        (cap.name("front").unwrap().as_str(),cap.name("content").unwrap().as_str())
+    }
+    else{
+        ("",raw)
+    }
+}
 fn meta_from_file(src:&Path) -> io::Result<Box<Post>>{
     let src_content=fs::read_to_string(src)?;
-    // todo opt
-    let (p1, p2) = if src_content.starts_with("+++\r\n"){
-        if let Some(t) = &src_content[3..].find("+++"){
-            let (p1, p2) = src_content.split_at(*t+3);
-            let p1 = p1.split_at(5).1;
-            let p2 = if p2.len() > 5 { p2.split_at(5).1 } else {""};
-            (Some(p1), p2)
-        }else{
-            (None,src_content.as_str())
-        }
-    }else{
-        (None,src_content.as_str())
-    };
+    let (p1, p2) = extract_post(&src_content);
     // should not panic here
-    let front_matter : FrontMatter = if let Some(t) = p1 {
-        toml::from_str(t).unwrap() // "".prase::<>().unwrap()
-    } else {
-        toml::from_str("").unwrap()
-    };
-    // &p2?
+    let front_matter: FrontMatter = toml::from_str(p1).unwrap();// "".prase::<>().unwrap()
     let content = markdown_to_html(p2, &ComrakOptions::default());
     let title = String::from(src.file_stem().unwrap().to_str().unwrap());
     let url = String::from(src.strip_prefix("content").unwrap().to_str().unwrap());
@@ -205,7 +205,6 @@ fn choose_template(src: &Path, opt: &Opt, post: &Post) -> String{
     if let Some(tpl) = &post.template {
         return tpl.clone();
     }    
-
     let mut tpl1=String::from(DEFAULT_INDEX_TPL_NAME);
     let mut tpl2=String::from(DEFAULT_PAGE_TPL_NAME);
     if let Some(tpl) = &opt.index {
@@ -219,5 +218,43 @@ fn choose_template(src: &Path, opt: &Opt, post: &Post) -> String{
     }
     else{
         tpl2
+    }
+}
+#[cfg(test)]
+mod test{
+    #[test]
+    fn extract_post_1() {
+        let s = "+++\r\nabc\r\n+++\r\ndfg\r\n";
+        let (p1,p2) = super::extract_post(s);
+        assert_eq!(p1,"abc\r\n");
+        assert_eq!(p2,"dfg\r\n");
+    }
+    #[test]
+    fn extract_post_2() {
+        let s = "+++\nabc\n+++\ndfg\n";
+        let (p1,p2) = super::extract_post(s);
+        assert_eq!(p1,"abc\n");
+        assert_eq!(p2,"dfg\n");
+    }
+    #[test]
+    fn extract_post_3() {
+        let s = "+++\nabc\n+++\ndfg\n+++\nhahaha\n";
+        let (p1,p2) = super::extract_post(s);
+        assert_eq!(p1,"abc\n");
+        assert_eq!(p2,"dfg\n+++\nhahaha\n");
+    }
+    #[test]
+    fn extract_post_4() {
+        let s = "+++\nabc +++\ndfg\n+++\nhahaha\n";
+        let (p1,p2) = super::extract_post(s);
+        assert_eq!(p1,"abc +++\ndfg\n");
+        assert_eq!(p2,"hahaha\n");
+    }
+    #[test]
+    fn extract_post_5() {
+        let s = "abc\n+++\ndfg\n+++\nhahaha\n";
+        let (p1,p2) = super::extract_post(s);
+        assert_eq!(p1,"");
+        assert_eq!(p2,s);
     }
 }
